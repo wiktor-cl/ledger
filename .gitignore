@@ -1,0 +1,15 @@
+# build output
+/target/
+
+# editors
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+
+# os
+.DS_Store
+Thumbs.db
+
+# logs
+*.log

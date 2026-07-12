@@ -1,0 +1,38 @@
+package com.wiktorcl.ledger.repository;
+
+import com.wiktorcl.ledger.domain.LedgerEntry;
+import org.springframework.data.repository.Repository;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Query;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Same rationale as {@link LedgerTransactionRepository}: extends the bare
+ * {@link Repository} marker so no delete/update method can exist on the
+ * append-only entry log, even by accident.
+ */
+public interface LedgerEntryRepository extends Repository<LedgerEntry, UUID> {
+
+    LedgerEntry save(LedgerEntry entry);
+
+    List<LedgerEntry> findByAccountIdOrderByCreatedAtAsc(UUID accountId);
+
+    List<LedgerEntry> findByAccountIdAndCreatedAtBetweenOrderByCreatedAtAsc(UUID accountId, Instant from, Instant to);
+
+    long countByTransactionId(UUID transactionId);
+
+    /** Signed sum (debit positive, credit negative) of all of an account's entries strictly before {@code before} - the report period's opening balance, computed DB-side rather than by pulling full history into memory. */
+    @Query("select coalesce(sum(case when e.type = com.wiktorcl.ledger.domain.EntryType.DEBIT then e.amount else -e.amount end), 0) " +
+            "from LedgerEntry e where e.account.id = :accountId and e.createdAt < :before")
+    BigDecimal sumSignedBefore(@Param("accountId") UUID accountId, @Param("before") Instant before);
+
+    /** Per-account-category, per-entry-type turnover totals within a period, aggregated in the database. */
+    @Query("select e.account.type as type, e.type as entryType, sum(e.amount) as total " +
+            "from LedgerEntry e where e.createdAt between :from and :to " +
+            "group by e.account.type, e.type")
+    List<TurnoverRow> aggregateByAccountType(@Param("from") Instant from, @Param("to") Instant to);
+}

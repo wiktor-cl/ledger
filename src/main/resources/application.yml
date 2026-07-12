@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: ledger
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ledger}
+    username: ${DB_USER:ledger}
+    password: ${DB_PASSWORD:ledger}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${SERVER_PORT:8080}
+
+ledger:
+  jwt:
+    # Dev-only default. Always override via JWT_SECRET in any real deployment.
+    secret: ${JWT_SECRET:dev-only-secret-please-override-me-with-something-at-least-32-bytes-long}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+  transfer:
+    max-retries: ${TRANSFER_MAX_RETRIES:20}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.wiktorcl.ledger: info
