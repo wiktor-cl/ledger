@@ -3,7 +3,7 @@ create table accounts (
     code            varchar(64) not null unique,
     name            varchar(255) not null,
     type            varchar(32) not null,
-    currency        char(3) not null,
+    currency        varchar(3) not null,
     balance         numeric(19, 4) not null default 0,
     version         bigint not null default 0,
     created_at      timestamptz not null default now(),
