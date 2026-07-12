@@ -20,8 +20,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -34,13 +32,26 @@ import java.util.UUID;
  * database, and real Flyway migrations, no mocks. Every test generates its
  * own unique account codes/idempotency keys so classes sharing the one
  * container never collide.
+ *
+ * <p>This is the Testcontainers "singleton container" pattern: the
+ * container is started once, manually, in a static initializer - it is
+ * deliberately <b>not</b> annotated with {@code @Container}/{@code @Testcontainers}.
+ * That JUnit extension manages start/stop per test class, and since this
+ * field is inherited (shared) across every {@code *IT} subclass here, its
+ * per-class {@code afterAll} would stop the one shared container out from
+ * under whichever test class happens to run next - which is exactly what
+ * happened when this was first written (later test classes got connection
+ * refused / stale-connection errors). Testcontainers' own Ryuk reaper
+ * container cleans this up when the JVM exits; there's no explicit stop.
  */
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class AbstractIntegrationTest {
 
-    @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    static {
+        POSTGRES.start();
+    }
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
