@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -29,6 +30,16 @@ public class AppUser {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /**
+     * Not used for concurrency control - it exists so Spring Data JPA's
+     * {@code isNew()} check works correctly for a manually-assigned UUID
+     * id (otherwise {@code save()} on a brand-new user calls {@code merge()}
+     * instead of {@code persist()}; see {@code LedgerTransaction.version}
+     * for the fuller explanation of this exact gotcha).
+     */
+    @Version
+    private Long version;
 
     protected AppUser() {
         // JPA

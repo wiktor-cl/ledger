@@ -15,7 +15,8 @@ create table ledger_transactions (
     description                 text not null,
     occurred_at                  timestamptz not null default now(),
     idempotency_key              varchar(128) unique,
-    reversal_of_transaction_id   uuid references ledger_transactions (id)
+    reversal_of_transaction_id   uuid references ledger_transactions (id),
+    version                      bigint not null default 0
 );
 
 create table ledger_entries (
@@ -25,6 +26,7 @@ create table ledger_entries (
     type            varchar(16) not null,
     amount          numeric(19, 4) not null,
     created_at      timestamptz not null default now(),
+    version         bigint not null default 0,
     constraint chk_ledger_entries_amount_positive check (amount > 0)
 );
 
@@ -37,5 +39,6 @@ create table app_users (
     username        varchar(128) not null unique,
     password_hash   varchar(255) not null,
     role            varchar(32) not null,
-    created_at      timestamptz not null default now()
+    created_at      timestamptz not null default now(),
+    version         bigint not null default 0
 );

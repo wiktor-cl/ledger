@@ -8,6 +8,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,6 +49,18 @@ public class LedgerTransaction {
 
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
     private List<LedgerEntry> entries = new ArrayList<>();
+
+    /**
+     * Not used for concurrency control (this entity is never updated) - it
+     * exists purely so Spring Data JPA's {@code isNew()} check has a
+     * reliable signal. Without it, a manually-assigned UUID id that's
+     * already non-null by construction time makes Spring Data assume the
+     * entity already exists and call {@code merge()} instead of
+     * {@code persist()}, which silently breaks the cascade-persist of new
+     * {@link LedgerEntry} children.
+     */
+    @Version
+    private Long version;
 
     protected LedgerTransaction() {
         // JPA

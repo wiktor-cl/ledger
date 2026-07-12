@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,6 +48,10 @@ public class LedgerEntry {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /** See {@link LedgerTransaction#version} - same isNew()-detection rationale, not concurrency control. */
+    @Version
+    private Long version;
 
     protected LedgerEntry() {
         // JPA
