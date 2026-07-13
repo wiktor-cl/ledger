@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.TransactionSystemException;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -91,7 +92,7 @@ class TransferServiceTest {
 
     @Test
     void existingIdempotencyKeyShortCircuitsWithoutCallingExecutor() {
-        LedgerTransaction existing = existingTransactionTo(toId, new BigDecimal("10.0000"));
+        LedgerTransaction existing = existingTransactionTo(new BigDecimal("10.0000"));
         when(transactionRepository.findByIdempotencyKey("idem-2")).thenReturn(Optional.of(existing));
         stubAccounts();
 
@@ -131,7 +132,7 @@ class TransferServiceTest {
 
     @Test
     void raceOnIdempotencyKeyInsertFallsBackToExistingTransaction() {
-        LedgerTransaction existing = existingTransactionTo(toId, new BigDecimal("10.0000"));
+        LedgerTransaction existing = existingTransactionTo(new BigDecimal("10.0000"));
         when(executor.attempt(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
         when(transactionRepository.findByIdempotencyKey("idem-5"))
                 .thenReturn(Optional.empty())
@@ -146,6 +147,38 @@ class TransferServiceTest {
         verify(executor, times(1)).attempt(any());
     }
 
+    @Test
+    void raceOnIdempotencyKeyInsertDetectedAtCommitTimeAlsoFallsBack() {
+        // Hibernate sometimes only detects the unique-constraint violation at transaction-commit
+        // flush, which JpaTransactionManager surfaces as TransactionSystemException rather than
+        // DataIntegrityViolationException - both must resolve to the same replayed result.
+        LedgerTransaction existing = existingTransactionTo(new BigDecimal("10.0000"));
+        when(executor.attempt(any())).thenThrow(new TransactionSystemException("commit failed"));
+        when(transactionRepository.findByIdempotencyKey("idem-6"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existing));
+        stubAccounts();
+
+        TransferService service = newService(5);
+        TransferResult result = service.transfer(command("idem-6"));
+
+        assertThat(result.replayed()).isTrue();
+        assertThat(result.transactionId()).isEqualTo(existing.getId());
+        verify(executor, times(1)).attempt(any());
+    }
+
+    @Test
+    void unrelatedTransactionSystemExceptionIsRethrownWhenNoMatchingTransactionExists() {
+        TransactionSystemException original = new TransactionSystemException("unrelated commit failure");
+        when(executor.attempt(any())).thenThrow(original);
+        when(transactionRepository.findByIdempotencyKey("idem-7")).thenReturn(Optional.empty());
+
+        TransferService service = newService(5);
+
+        assertThatThrownBy(() -> service.transfer(command("idem-7")))
+                .isSameAs(original);
+    }
+
     private void stubAccounts() {
         Account from = mock(Account.class);
         when(from.getId()).thenReturn(fromId);
@@ -157,14 +190,10 @@ class TransferServiceTest {
         when(accountRepository.findById(toId)).thenReturn(Optional.of(to));
     }
 
-    private LedgerTransaction existingTransactionTo(UUID toAccountId, BigDecimal amount) {
-        Account to = mock(Account.class);
-        when(to.getId()).thenReturn(toAccountId);
+    private LedgerTransaction existingTransactionTo(BigDecimal amount) {
         LedgerTransaction transaction = LedgerTransaction.create("replayed", "idem-existing");
-        Account from = mock(Account.class);
-        when(from.getId()).thenReturn(fromId);
-        transaction.post(from, EntryType.CREDIT, amount);
-        transaction.post(to, EntryType.DEBIT, amount);
+        transaction.post(mock(Account.class), EntryType.CREDIT, amount);
+        transaction.post(mock(Account.class), EntryType.DEBIT, amount);
         return transaction;
     }
 }

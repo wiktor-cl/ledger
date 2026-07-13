@@ -35,8 +35,12 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    // Exception, not RuntimeException: MissingRequestHeaderException extends the checked
+    // jakarta.servlet.ServletException, so a RuntimeException-typed parameter here can never
+    // be bound to it - Spring fails with "Could not resolve parameter... No suitable resolver"
+    // and the request falls through to handleUnexpected() as a 500 instead of a 400.
     @ExceptionHandler({InvalidTransferException.class, MissingRequestHeaderException.class})
-    public ProblemDetail handleBadRequest(RuntimeException ex) {
+    public ProblemDetail handleBadRequest(Exception ex) {
         return problem(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 

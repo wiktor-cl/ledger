@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionSystemException;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -84,8 +85,17 @@ public class TransferService {
                 log.debug("Optimistic lock conflict on attempt {}/{} for idempotency key {}",
                         attempt, maxRetries, command.idempotencyKey());
                 backoff(attempt);
-            } catch (DataIntegrityViolationException e) {
+            } catch (DataIntegrityViolationException | TransactionSystemException e) {
                 // Another concurrent request with the same Idempotency-Key committed first.
+                //
+                // The unique-constraint violation on ledger_transactions.idempotency_key is
+                // sometimes thrown as a plain DataIntegrityViolationException (when Hibernate's
+                // flush happens inside an explicit repository call) and sometimes as a
+                // TransactionSystemException (when the constraint is only violated at the
+                // transaction-commit flush, which JpaTransactionManager wraps differently) -
+                // both are handled the same way here. If the lookup comes up empty, this wasn't
+                // actually an idempotency-key race, so the original exception is rethrown rather
+                // than swallowed.
                 return transactionRepository.findByIdempotencyKey(command.idempotencyKey())
                         .map(t -> toReplayedResult(t, command))
                         .orElseThrow(() -> e);
@@ -97,17 +107,22 @@ public class TransferService {
                         + command.fromAccountId() + " or " + command.toAccountId());
     }
 
+    /**
+     * Builds the response for a replayed (already-posted) transfer. Deliberately
+     * does not touch {@code transaction.getEntries()}: that's a lazy collection,
+     * and this method runs outside any transaction (this class isn't
+     * {@code @Transactional} - only {@link TransferAttemptExecutor} is, for the
+     * actual posting), so initializing it here would throw
+     * {@code LazyInitializationException}. The command's own amount is exactly
+     * what was posted under this idempotency key, so there is nothing to
+     * re-derive from the entries in the first place.
+     */
     private TransferResult toReplayedResult(LedgerTransaction transaction, TransferCommand command) {
         Account from = accountRepository.findById(command.fromAccountId())
                 .orElseThrow(() -> new AccountNotFoundException(command.fromAccountId()));
         Account to = accountRepository.findById(command.toAccountId())
                 .orElseThrow(() -> new AccountNotFoundException(command.toAccountId()));
-        BigDecimal amount = transaction.getEntries().stream()
-                .filter(e -> e.getAccount().getId().equals(to.getId()))
-                .findFirst()
-                .map(e -> e.getAmount())
-                .orElse(command.amount());
-        return new TransferResult(transaction.getId(), from.getId(), to.getId(), amount,
+        return new TransferResult(transaction.getId(), from.getId(), to.getId(), command.amount(),
                 from.getBalance(), to.getBalance(), true);
     }
 
