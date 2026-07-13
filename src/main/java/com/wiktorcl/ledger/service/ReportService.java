@@ -31,18 +31,20 @@ public class ReportService {
     }
 
     /**
-     * An account statement for [from, to): the opening balance is the
-     * signed sum of everything before {@code from} (computed by the
-     * database, not by pulling full history into the JVM), followed by a
-     * running balance for each entry actually in the period.
+     * An account statement for [from, to): the opening balance is derived as
+     * {@code account.balance - sumSignedFrom(accountId, from)} (see the
+     * javadoc on {@link com.wiktorcl.ledger.repository.LedgerEntryRepository#sumSignedFrom}
+     * for why summing entries strictly before {@code from} isn't enough - an
+     * account's opening balance isn't itself a {@link LedgerEntry}), followed
+     * by a running balance for each entry actually in the period.
      */
     @Transactional(readOnly = true)
     public AccountStatement statement(UUID accountId, Instant from, Instant to) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException(accountId));
 
-        BigDecimal running = entryRepository.sumSignedBefore(accountId, from);
-        BigDecimal openingBalance = running;
+        BigDecimal openingBalance = account.getBalance().subtract(entryRepository.sumSignedFrom(accountId, from));
+        BigDecimal running = openingBalance;
 
         List<LedgerEntry> entries = entryRepository.findByAccountIdAndCreatedAtBetweenOrderByCreatedAtAsc(accountId, from, to);
         List<AccountStatement.Line> lines = new ArrayList<>(entries.size());

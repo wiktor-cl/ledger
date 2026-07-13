@@ -34,17 +34,22 @@ class ReportServiceTest {
     @Test
     void statementIncludesOpeningBalanceAndRunningBalancePerLine() {
         UUID accountId = UUID.randomUUID();
-        Account account = Account.open("CASH", "Cash", AccountType.ASSET, "USD", BigDecimal.ZERO);
+        // A non-zero opening balance on purpose: it is seeded directly onto Account.balance at
+        // creation time (see Account.open) rather than as a LedgerEntry, so this is what exposes
+        // a report that (incorrectly) derives the opening balance purely from summing entries.
+        Account account = withId(Account.open("CASH", "Cash", AccountType.ASSET, "USD", new BigDecimal("100.0000")), accountId);
         Instant from = Instant.parse("2026-01-01T00:00:00Z");
         Instant to = Instant.parse("2026-02-01T00:00:00Z");
 
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(withId(account, accountId)));
-        when(entryRepository.sumSignedBefore(eq(accountId), eq(from))).thenReturn(new BigDecimal("100.0000"));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
         LedgerTransaction txn = LedgerTransaction.create("desc", "idem-1");
-        LedgerEntry entry = post(txn, withId(account, accountId), EntryType.DEBIT, new BigDecimal("25.0000"));
+        // Posting mutates account.balance via Account.applyEntry, so it becomes 125.0000 here -
+        // exactly mirroring what a real DEBIT-side ASSET posting does in production.
+        LedgerEntry entry = post(txn, account, EntryType.DEBIT, new BigDecimal("25.0000"));
         when(entryRepository.findByAccountIdAndCreatedAtBetweenOrderByCreatedAtAsc(accountId, from, to))
                 .thenReturn(List.of(entry));
+        when(entryRepository.sumSignedFrom(eq(accountId), eq(from))).thenReturn(new BigDecimal("25.0000"));
 
         ReportService reportService = new ReportService(accountRepository, entryRepository);
         AccountStatement statement = reportService.statement(accountId, from, to);
